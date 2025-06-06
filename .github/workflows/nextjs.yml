@@ -75,7 +75,7 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Build with Next.js
-        run: ${{ steps.detect-package-manager.outputs.run-command }} pnpm run build
+        run: ${{ steps.detect-package-manager.outputs.run-command }} npm run build
         working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Upload artifact
