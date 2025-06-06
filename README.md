@@ -22,6 +22,11 @@
 - **Gợi ý:** Người chơi có thể nhấn nút "Gợi ý" tối đa 3 lần để biết một chữ cái có trong đáp án nhưng chưa đoán ra.
 - **Giao diện:** Xây dựng bằng [Next.js](https://nextjs.org) và [React](https://react.dev), sử dụng Tailwind CSS cho giao diện hiện đại, hỗ trợ cả chế độ sáng/tối.
 
+## Demo
+Bạn có thể chơi thử tại [https://minhqnd.github.io/wordle-vietnamese](https://minhqnd.github.io/wordle-vietnamese).
+
+![Demo Wordle Tiếng Việt](public/screenshot.png)
+
 ## Cài đặt & chạy ứng dụng
 
 ### Yêu cầu
@@ -31,7 +36,7 @@
 ### Cài đặt
 
 ```bash
-git clone https://github.com/tenbanbe/wordle-vietnamese.git
+git clone https://github.com/minhqnd/wordle-vietnamese.git
 cd wordle-vietnamese
 pnpm install
 # hoặc npm install, yarn install, hoặc bun install
