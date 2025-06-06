@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wordle Tiếng Việt 🇻🇳
 
-## Getting Started
+**Wordle Tiếng Việt** là trò chơi đoán từ dựa trên cảm hứng từ Wordle, dành riêng cho người dùng tiếng Việt. Bạn có 6 lượt để đoán một từ tiếng Việt gồm 7 chữ cái (không dấu, không khoảng trắng). Sau mỗi lần đoán, các ô chữ sẽ đổi màu để gợi ý mức độ chính xác của bạn:
 
-First, run the development server:
+- 🟩 **Xanh lá**: Chữ đúng và đúng vị trí.
+- 🟨 **Vàng**: Chữ đúng nhưng sai vị trí.
+- ⬜ **Xám**: Chữ không có trong từ.
+
+## Cách chơi
+
+1. Mỗi lượt, nhập một từ tiếng Việt hợp lệ gồm 7 chữ cái (không dấu, không khoảng trắng).
+2. Nhấn **Enter** để xác nhận.
+3. Quan sát màu sắc các ô để suy luận từ cần tìm.
+4. Bạn có tối đa 6 lượt đoán. Có thể sử dụng tối đa 3 gợi ý để biết một chữ cái có trong từ.
+5. Khi hết lượt hoặc đoán đúng, từ cần tìm sẽ được hiển thị.
+
+## Cách chương trình hoạt động
+
+- **Chọn từ ngẫu nhiên:** Mỗi ván chơi, chương trình chọn một từ tiếng Việt 7 chữ cái từ danh sách trong [`lib/wordle.js`](lib/wordle.js).
+- **Xử lý nhập liệu:** Người chơi nhập từ qua bàn phím thật hoặc bàn phím ảo trên giao diện.
+- **So sánh & đánh giá:** Hàm kiểm tra sẽ so sánh từng chữ cái với đáp án, trả về trạng thái `correct`, `present`, hoặc `absent` cho từng vị trí.
+- **Gợi ý:** Người chơi có thể nhấn nút "Gợi ý" tối đa 3 lần để biết một chữ cái có trong đáp án nhưng chưa đoán ra.
+- **Giao diện:** Xây dựng bằng [Next.js](https://nextjs.org) và [React](https://react.dev), sử dụng Tailwind CSS cho giao diện hiện đại, hỗ trợ cả chế độ sáng/tối.
+
+## Cài đặt & chạy ứng dụng
+
+### Yêu cầu
+- Node.js >= 18
+- pnpm (hoặc npm/yarn/bun)
+
+### Cài đặt
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/tenbanbe/wordle-vietnamese.git
+cd wordle-vietnamese
+pnpm install
+# hoặc npm install, yarn install, hoặc bun install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Chạy ứng dụng
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm dev
+# hoặc npm run dev, yarn dev, hoặc bun dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Mở [http://localhost:3000](http://localhost:3000) trong trình duyệt để xem kết quả.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
