@@ -1,4 +1,4 @@
-# Wordle Tiếng Việt 🇻🇳
+![Wordle Vietnames](public/img/wordle_vi_1200x630.png)
 
 **Wordle Tiếng Việt** là trò chơi đoán từ dựa trên cảm hứng từ Wordle, dành riêng cho người dùng tiếng Việt. Bạn có 6 lượt để đoán một từ tiếng Việt gồm 7 chữ cái (không dấu, không khoảng trắng). Sau mỗi lần đoán, các ô chữ sẽ đổi màu để gợi ý mức độ chính xác của bạn:
 
