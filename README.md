@@ -23,7 +23,7 @@
 - **Giao diện:** Xây dựng bằng [Next.js](https://nextjs.org) và [React](https://react.dev), sử dụng Tailwind CSS cho giao diện hiện đại, hỗ trợ cả chế độ sáng/tối.
 
 ## Demo
-Bạn có thể chơi thử tại [https://minhqnd.github.io/wordle-vietnamese](https://minhqnd.github.io/wordle-vietnamese).
+Bạn có thể chơi thử tại [https://minhqnd.com/wordle](https://minhqnd.com/wordle).
 
 ![Demo Wordle Tiếng Việt](public/screenshot.png)
 
