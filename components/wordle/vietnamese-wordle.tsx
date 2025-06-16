@@ -2,19 +2,118 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { RotateCcw, HelpCircle, Loader2 } from "lucide-react"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { RotateCcw, HelpCircle, Loader2, Github, CornerDownLeft, Delete } from "lucide-react"
 import TutorialModal from "@/components/wordle/tutorial-modal"
 import { toast } from "react-toastify"
-import { wordList } from "@/lib/wordle.js"
+import { motion, AnimatePresence } from "framer-motion"
+import confetti from "canvas-confetti"
 
+// -- Merged client-side logic for Wordle & lookup --
+
+// Local word lists and dictionary
+import { wordList as wordListAll } from "@/lib/wordle"
+import { wordList as wordListValid } from "@/lib/wordle_valid"
+import vietDict from "@/lib/dictionary_vi.json"
+
+// Shared logic to normalize Vietnamese text for matching
 function normalize(str: string) {
   return str
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
     .replace(/\s+/g, "")
     .toUpperCase()
+}
+
+// POS chính
+const POS_LABELS: Record<string, string> = {
+  A: 'Tính từ',
+  C: 'Liên từ',
+  D: 'Phó từ',
+  E: 'Giới từ',
+  I: 'Thán từ',
+  M: 'Lượng từ',
+  N: 'Danh từ',
+  O: 'Từ tình thái',
+  P: 'Đại từ',
+  R: 'Trạng từ',
+  S: 'Từ đặc biệt',
+  V: 'Động từ',
+  X: 'Từ phụ trợ / khác',
+  Z: 'Hậu tố',
+  n: 'Chưa phân loại rõ'
+};
+
+// sub_pos
+const SUB_POS_LABELS: Record<string, string> = {
+  A: 'Tính từ nói chung',
+  A0: 'Tính từ chỉ số lượng, trạng thái tổng quát',
+  Ai: 'Tính từ chỉ khả năng, thuộc tính nội tại',
+  Ao: 'Tính từ chỉ âm thanh, cảm giác',
+  Ap: 'Tính từ phổ biến',
+  Ar: 'Tính từ chỉ mức độ, cường độ',
+  Ax: 'Tính từ đặc biệt',
+  Vi: 'Động từ nội',
+  Vm: 'Động từ phương pháp',
+  Vs: 'Động từ không chuyển',
+  Vt: 'Động từ chuyển',
+  Vu: 'Động từ đặc biệt/thành ngữ',
+  N: 'Danh từ nói chung',
+  Na: 'Danh từ trừu tượng',
+  Nc: 'Danh từ chỉ người',
+  Ng: 'Danh từ giống loài',
+  Nl: 'Danh từ đơn vị',
+  Np: 'Danh từ riêng',
+  Nt: 'Danh từ chỉ vật, hiện tượng',
+  Nu: 'Danh từ số lượng',
+  Nx: 'Danh từ chuyên biệt',
+  Pd: 'Đại từ chỉ định',
+  Pi: 'Đại từ nhân xưng',
+  Pp: 'Đại từ sở hữu',
+  Pq: 'Đại từ nghi vấn',
+  C: 'Liên từ',
+  D: 'Phó từ',
+  E: 'Giới từ',
+  I: 'Thán từ',
+  Mc: 'Lượng từ đơn vị',
+  Mo: 'Lượng từ số lượng',
+  O: 'Từ tình thái',
+  R: 'Trạng từ',
+  S: 'Từ đặc biệt',
+  X: 'Tổ hợp từ đặc biệt',
+  XX: 'Từ lỗi/dữ liệu không xác định',
+  Z: 'Hậu tố'
+};
+
+interface DictionaryMeaning {
+  example: string
+  sub_pos: string
+  definition: string
+  pos: string
+}
+
+// Look up a word locally from vietDict
+function lookupWordLocally(word: string) {
+  const inputNormalized = normalize(word)
+  const entry = Object.entries(vietDict).find(
+    ([key]) => key === word || normalize(key) === inputNormalized
+  )
+  if (!entry) return null
+
+  const [originalWord, meanings] = entry
+  const updatedMeanings = (meanings as DictionaryMeaning[]).map((m) => ({
+    ...m,
+    pos: POS_LABELS[m.pos] || m.pos,
+    sub_pos: SUB_POS_LABELS[m.sub_pos] || m.sub_pos,
+  }))
+
+  return {
+    exists: true,
+    word: originalWord,
+    meanings: updatedMeanings,
+  }
 }
 
 const VIETNAMESE_KEYBOARD_ROWS = [
@@ -38,6 +137,17 @@ interface GameState {
   syllableHint: string | null
 }
 
+interface WordMeaning {
+  exists: boolean;
+  word: string;
+  meanings: Array<{
+    example?: string;
+    sub_pos?: string;
+    definition: string;
+    pos?: string;
+  }>;
+}
+
 interface WordData {
   original: string
   normalized: string
@@ -47,6 +157,20 @@ export default function VietnameseWordle() {
   const [showTutorial, setShowTutorial] = useState<boolean>(true)
   const [isLoadingWord, setIsLoadingWord] = useState<boolean>(false)
   const [isCheckingWord, setIsCheckingWord] = useState<boolean>(false)
+  const [startTime, setStartTime] = useState<number | null>(null)
+  const [finishTime, setFinishTime] = useState<number | null>(null)
+  const [wordMeaning, setWordMeaning] = useState<WordMeaning | null>(null)
+
+  const getElapsedTime = useCallback(() => {
+    if (startTime && finishTime) {
+      const timeInSeconds = Math.floor((finishTime - startTime) / 1000)
+      const minutes = Math.floor(timeInSeconds / 60)
+      const seconds = timeInSeconds % 60
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`
+    }
+    return null
+  }, [startTime, finishTime])
+
   const [gameState, setGameState] = useState<GameState>({
     board: Array.from({ length: 6 }, () => Array(7).fill("")),
     currentRow: 0,
@@ -60,35 +184,36 @@ export default function VietnameseWordle() {
     syllableHint: null,
   })
 
-  // === Fetch / Check từ điển ===
-  const fetchNewWord = async (): Promise<WordData> => {
+  // === Instead of fetching, pick a random word from wordListValid ===
+  const getNewWord = useCallback((): WordData => {
     setIsLoadingWord(true)
     try {
-      const randomIndex = Math.floor(Math.random() * wordList.length)
-      const original = wordList[randomIndex]
+      const randomIndex = Math.floor(Math.random() * wordListValid.length)
+      const original = wordListValid[randomIndex]
       const normalized = normalize(original)
       return { original, normalized }
     } catch (error) {
-      console.error("Error fetching word:", error)
+      console.error("Error picking word:", error)
       return { original: "học sinh", normalized: "HOCSINH" }
     } finally {
       setIsLoadingWord(false)
     }
-  }
+  }, [])
 
-  const checkWordExists = async (word: string): Promise<boolean> => {
+  // === Instead of fetching, check presence in local lists ===
+  const localCheckWordExists = useCallback((word: string): boolean => {
     setIsCheckingWord(true)
     try {
       const normalizedInput = normalize(word)
-      const normalizedList = wordList.map(normalize)
-      return normalizedList.includes(normalizedInput)
+      const normalizedListAll = wordListAll.map(normalize)
+      return normalizedListAll.includes(normalizedInput)
     } catch (error) {
       console.error("Error checking word:", error)
       return false
     } finally {
       setIsCheckingWord(false)
     }
-  }
+  }, [])
 
   // === Phân tích âm tiết để hiển thị hint cấu trúc ===
   const analyzeSyllableStructure = (originalWord: string): string => {
@@ -105,9 +230,8 @@ export default function VietnameseWordle() {
   }
 
   // === Khởi tạo/làm mới game ===
-  const initializeGame = useCallback(async () => {
-    const wordData = await fetchNewWord()
-    console.log("🎯 Target word:", wordData.original)
+  const initializeGame = useCallback(() => {
+    const wordData = getNewWord()
     setGameState({
       board: Array.from({ length: 6 }, () => Array(7).fill("")),
       currentRow: 0,
@@ -120,7 +244,9 @@ export default function VietnameseWordle() {
       hintedLetters: new Set(),
       syllableHint: analyzeSyllableStructure(wordData.original),
     })
-  }, [])
+    setStartTime(Date.now())
+    setFinishTime(null)
+  }, [getNewWord])
 
   useEffect(() => {
     initializeGame()
@@ -136,14 +262,12 @@ export default function VietnameseWordle() {
     const result: LetterState[] = Array(7).fill("absent")
     const targetLetters = target.split("")
     const guessLetters = guess.split("")
-    
-    // Đếm số lần xuất hiện của các ký tự trong từ đích
+
     const targetLetterCount: Record<string, number> = {}
     for (const letter of targetLetters) {
       targetLetterCount[letter] = (targetLetterCount[letter] || 0) + 1
     }
-    
-    // Đánh dấu correct trước
+
     for (let i = 0; i < 7; i++) {
       if (guessLetters[i] === targetLetters[i]) {
         result[i] = "correct"
@@ -151,7 +275,6 @@ export default function VietnameseWordle() {
       }
     }
 
-    // Đánh dấu present
     for (let i = 0; i < 7; i++) {
       if (result[i] !== "correct" && targetLetterCount[guessLetters[i]] > 0) {
         result[i] = "present"
@@ -195,72 +318,79 @@ export default function VietnameseWordle() {
     if (available.length > 0) {
       const rand = available[Math.floor(Math.random() * available.length)]
       setGameState((prev) => {
-      const newSet = new Set(prev.hintedLetters)
-      newSet.add(rand)
-      return {
-        ...prev,
-        hintCount: prev.hintCount + 1,
-        hintedLetters: newSet,
-      }
+        const newSet = new Set(prev.hintedLetters)
+        newSet.add(rand)
+        return {
+          ...prev,
+          hintCount: prev.hintCount + 1,
+          hintedLetters: newSet,
+        }
       })
       toast.info(`Gợi ý: Chữ "${rand}" có trong từ!`, {
-      position: "top-center",
-      autoClose: 3000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
+        position: "top-center",
+        autoClose: 3000,
       })
     } else {
       setGameState((prev) => ({
-      ...prev,
-      hintCount: prev.hintCount + 1,
+        ...prev,
+        hintCount: prev.hintCount + 1,
       }))
       toast.info("Không còn chữ nào để gợi ý!", {
-      position: "top-center",
-      autoClose: 3000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
+        position: "top-center",
+        autoClose: 3000,
       })
     }
   }, [gameState])
 
   // === Submit guess ===
-  const submitGuess = useCallback(async () => {
+  const submitGuess = useCallback(() => {
     const guess = gameState.board[gameState.currentRow].join("")
     if (guess.length !== 7) {
       toast.error("Từ phải có đủ 7 chữ cái!", {
-      position: "top-center",
-      autoClose: 3000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
+        position: "top-center",
+        autoClose: 3000,
       })
       return
     }
 
-    const exists = await checkWordExists(guess)
+    if (guess === gameState.targetWord) {
+      const result = checkGuess(guess)
+      const newLetterStates = { ...gameState.letterStates }
+
+      result.forEach((state, idx) => {
+        const ch = guess[idx]
+        const prevState = newLetterStates[ch]
+        if (!prevState) {
+          newLetterStates[ch] = state
+        } else if (prevState === "absent" && state !== "absent") {
+          newLetterStates[ch] = state
+        } else if (prevState === "present" && state === "correct") {
+          newLetterStates[ch] = "correct"
+        }
+      })
+      setFinishTime(Date.now())
+      setGameState((prev) => ({
+        ...prev,
+        letterStates: newLetterStates,
+        gameStatus: "won",
+        currentRow: prev.currentRow + 1,
+        currentCol: 0,
+      }))
+      return
+    }
+
+    // Check locally
+    const exists = localCheckWordExists(guess)
     if (!exists) {
       setGameState((prev) => {
-      const newBoard = prev.board.map((r, idx) =>
-        idx === prev.currentRow ? Array(7).fill("") : [...r]
-      )
-      return {
-        ...prev,
-        board: newBoard,
-        currentCol: 0,
-      }
+        const newBoard = prev.board.map((r, idx) =>
+          idx === prev.currentRow ? Array(7).fill("") : [...r]
+        )
+        return { ...prev, board: newBoard, currentCol: 0 }
       })
       toast.error("Từ không tồn tại trong từ điển!", {
-      position: "top-center",
-      autoClose: 3000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
+        position: "top-center",
+        autoClose: 3000,
       })
       return
     }
@@ -282,6 +412,7 @@ export default function VietnameseWordle() {
 
     const isWin = guess === gameState.targetWord
     const isLoss = gameState.currentRow === 5 && !isWin
+    if (isWin) setFinishTime(Date.now())
 
     setGameState((prev) => ({
       ...prev,
@@ -290,7 +421,7 @@ export default function VietnameseWordle() {
       currentRow: prev.currentRow + 1,
       currentCol: 0,
     }))
-  }, [gameState, checkGuess])
+  }, [gameState, checkGuess, localCheckWordExists])
 
   // === Xử lý nhập bàn phím ===
   const handleKeyPress = useCallback(
@@ -304,10 +435,6 @@ export default function VietnameseWordle() {
           toast.error("Từ phải có đủ 7 chữ cái!", {
             position: "top-center",
             autoClose: 3000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
           })
         }
       } else if (key === "BACKSPACE") {
@@ -414,7 +541,33 @@ export default function VietnameseWordle() {
     }
   }, [gameState.letterStates, gameState.hintedLetters])
 
-  // === Loading mới từ ===
+  // === Use local dictionary for final word meaning ===
+  useEffect(() => {
+    if (gameState.gameStatus === "won" || gameState.gameStatus === "lost") {
+      const localData = lookupWordLocally(gameState.originalWord)
+      if (!localData) {
+        setWordMeaning(null)
+      } else {
+        setWordMeaning(localData)
+      }
+    } else {
+      setWordMeaning(null)
+    }
+  }, [gameState.gameStatus, gameState.originalWord])
+
+  // Confetti effect when win
+  useEffect(() => {
+    if (gameState.gameStatus === "won") {
+      confetti({
+        particleCount: 60,
+        spread: 90,
+        angle: 90,
+        gravity: 0.5,
+        origin: { y: 0.45 }
+      })
+    }
+  }, [gameState.gameStatus])
+
   if (isLoadingWord) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-neutral-800 p-4">
@@ -432,7 +585,7 @@ export default function VietnameseWordle() {
     <div className="flex flex-col items-center justify-center min-h-screen md:min-h-dvh-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-neutral-900 dark:to-neutral-800 transition-colors duration-200 md:p-4">
       <TutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
 
-      <Card className="w-full h-screen md:h-full max-w-lg md:shadow-2xl border-0 bg-white/90 dark:bg-neutral-900 md:backdrop-blur-xl dark:border p-1 md:p-4">
+      <Card className="w-full min-h-screen md:min-h-full max-w-lg md:shadow-2xl border-0 bg-white/90 dark:bg-neutral-900 md:backdrop-blur-xl dark:border p-1 md:p-4">
         <CardHeader className="text-center p-4 md:p-4 pb-6 md:pb-4 space-y-0">
           <div className="flex items-center justify-between">
             <Button
@@ -443,8 +596,12 @@ export default function VietnameseWordle() {
             >
               <HelpCircle className="h-5 w-5" />
             </Button>
-            <CardTitle className="text-3xl font-bold bg-gradient-to-r text-neutral-600 hover:text-neutral-800 dark:text-white dark:hover:text-neutral-200 bg-clip-text">
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r text-neutral-600 hover:text-neutral-800 dark:text-white dark:hover:text-neutral-200 bg-clip-text flex items-center gap-0">
               Wordle
+              <svg width="40" height="24" viewBox="0 0 36 36" className="inline-block">
+                <path fill="#DA251D" d="M32 5H4a4 4 0 0 0-4 4v18a4 4 0 0 0 4 4h28a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4z"></path>
+                <path fill="#FF0" d="M19.753 16.037L18 10.642l-1.753 5.395h-5.672l4.589 3.333l-1.753 5.395L18 21.431l4.589 3.334l-1.753-5.395l4.589-3.333z"></path>
+              </svg>
             </CardTitle>
             <div className="flex gap-2">
               <Button
@@ -467,25 +624,100 @@ export default function VietnameseWordle() {
             </div>
           </div>
 
-          {gameState.gameStatus === "won" && (
-            <div className="mt-4 p-4 bg-green-100 dark:bg-emerald-900/30 rounded-lg border border-green-200 dark:border-emerald-800">
-              <p className="text-green-800 dark:text-emerald-200 font-semibold text-lg">🎉 Chúc mừng! Bạn đã thắng!</p>
-              <p className="text-green-700 dark:text-emerald-300 mt-2">
-                Từ cần tìm: <span className="font-bold text-xl">&ldquo;{gameState.originalWord}&ldquo;</span>
-              </p>
-            </div>
-          )}
+          <AnimatePresence mode="wait">
+            {gameState.gameStatus === "won" && (
+              <motion.div
+                key="won"
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 30 }}
+                transition={{ duration: 2.0, type: "spring" }}
+                className="mt-4 p-4 bg-green-100 dark:bg-emerald-900/30 rounded-lg border border-green-200 dark:border-emerald-800"
+              >
+                <p className="text-green-800 dark:text-emerald-200 font-semibold text-lg">🎉 Chúc mừng! Bạn đã thắng!</p>
+                <p className="text-green-700 dark:text-emerald-300 mt-2">
+                  Từ cần tìm: <span className="font-bold text-xl">&ldquo;{gameState.originalWord}&ldquo;</span>
+                </p>
+                {getElapsedTime() && (
+                  <p className="text-green-700 dark:text-emerald-300 mt-2">
+                    ⏱️ Thời gian hoàn thành: <span className="font-semibold">{getElapsedTime()}</span>
+                  </p>
+                )}
+                {wordMeaning && wordMeaning.meanings && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    transition={{ duration: 0.5, type: "spring" }}
+                    className="mt-3 text-left"
+                  >
+                    <p className="font-semibold text-green-800 dark:text-emerald-200">Giải nghĩa:</p>
+                    <ul className="list-disc ml-5 mt-1 space-y-2">
+                      {wordMeaning.meanings.map((m, idx) => (
+                        <li key={idx}>
+                          <span className="font-medium">{m.definition}</span>
+                          {(m.pos || m.sub_pos) && (
+                            <span className="block text-xs text-green-700 dark:text-emerald-300 mt-0.5">
+                              {m.pos && <span><b>Loại:</b> {m.pos}</span>}
+                              {m.pos && m.sub_pos && <span> · </span>}
+                              {m.sub_pos && <span><b>Nhóm:</b> {m.sub_pos}</span>}
+                            </span>
+                          )}
+                          {m.example && <span className="block text-xs text-green-700 dark:text-emerald-300 mt-0.5"><b>VD:</b> {m.example}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+                <Button className="mt-2" variant="outline" onClick={resetGame}>Bắt đầu game mới</Button>
+              </motion.div>
+            )}
 
-          {gameState.gameStatus === "lost" && (
-            <div className="mt-4 p-4 bg-red-100 dark:bg-rose-900/30 rounded-lg border border-red-200 dark:border-rose-800">
-              <p className="text-red-800 dark:text-rose-200 font-semibold text-lg">😔 Hết lượt rồi!</p>
-              <p className="text-red-700 dark:text-rose-300 mt-2">
-                Từ cần tìm: <span className="font-bold text-xl">&ldquo;{gameState.originalWord}&ldquo;</span>
-              </p>
-            </div>
-          )}
+            {gameState.gameStatus === "lost" && (
+              <motion.div
+                key="lost"
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 30 }}
+                transition={{ duration: 2.0, type: "spring" }}
+                className="mt-4 p-4 bg-red-100 dark:bg-rose-900/30 rounded-lg border border-red-200 dark:border-rose-800"
+              >
+                <p className="text-red-800 dark:text-rose-200 font-semibold text-lg">😔 Hết lượt rồi!</p>
+                <p className="text-red-700 dark:text-rose-300 mt-2">
+                  Từ cần tìm: <span className="font-bold text-xl">&ldquo;{gameState.originalWord}&ldquo;</span>
+                </p>
+                {wordMeaning && wordMeaning.meanings && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    transition={{ duration: 0.5, type: "spring" }}
+                    className="mt-3 text-left"
+                  >
+                    <p className="font-semibold text-red-800 dark:text-rose-200">Giải nghĩa:</p>
+                    <ul className="list-disc ml-5 mt-1 space-y-2">
+                      {wordMeaning.meanings.map((m, idx) => (
+                        <li key={idx}>
+                          <span className="font-medium">{m.definition}</span>
+                          {(m.pos || m.sub_pos) && (
+                            <span className="block text-xs text-red-700 dark:text-rose-300 mt-0.5">
+                              {m.pos && <span><b>Loại:</b> {m.pos}</span>}
+                              {m.pos && m.sub_pos && <span> · </span>}
+                              {m.sub_pos && <span><b>Nhóm:</b> {m.sub_pos}</span>}
+                            </span>
+                          )}
+                          {m.example && <span className="block text-xs text-red-700 dark:text-rose-300 mt-0.5">VD: {m.example}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+                <Button className="mt-2" variant="outline" onClick={resetGame}>Bắt đầu game mới</Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {gameState.syllableHint && (
+          {gameState.syllableHint && gameState.gameStatus === "playing" && (
             <div className="mt-4 p-4 bg-blue-100 dark:bg-teal-900/30 rounded-lg border border-blue-200 dark:border-teal-800">
               <p className="text-blue-800 dark:text-teal-200 font-semibold text-sm">📝 Gợi ý cấu trúc:</p>
               <p className="text-blue-700 dark:text-teal-300 mt-1 text-sm">{gameState.syllableHint}</p>
@@ -494,8 +726,7 @@ export default function VietnameseWordle() {
         </CardHeader>
 
         <CardContent className="p-0 space-y-6">
-          {/* Bảng đoán chữ */}
-          <div className="grid grid-cols-7 gap-1.5 md:gap-2 mb-6 justify-center place-items-center px-2">
+          <div className="grid grid-cols-7 gap-1.5 md:gap-2 mb-6 justify-center place-items-center px-2 md:px-8">
             {gameState.board.map((row, rowIndex) =>
               row.map((_, colIndex) => (
                 <div
@@ -513,7 +744,6 @@ export default function VietnameseWordle() {
             )}
           </div>
 
-          {/* Bàn phím ảo */}
           <div className="space-y-2">
             {VIETNAMESE_KEYBOARD_ROWS.map((row, rowIndex) => (
               <div key={rowIndex} className="flex justify-center gap-1">
@@ -523,21 +753,21 @@ export default function VietnameseWordle() {
                     variant="outline"
                     size="sm"
                     className={`
-                      ${key === "ENTER" || key === "BACKSPACE" ? "px-3 text-xs" : "w-10 h-10 p-0"}
+                      w-10 h-10 p-0 flex items-center justify-center
                       font-semibold transition-all duration-200 rounded-md shadow-sm
                       ${getKeyColor(key)}
+                      ${key === "ENTER" || key === "BACKSPACE" ? "text-xs" : ""}
                     `}
                     onClick={() => handleKeyPress(key)}
                     disabled={gameState.gameStatus !== "playing" || isCheckingWord}
                   >
-                    {key === "BACKSPACE" ? "⌫" : key === "ENTER" ? "↵" : key}
+                    {key === "BACKSPACE" ? <Delete className="h-4 w-4" /> : key === "ENTER" ? <CornerDownLeft className="h-4 w-4" /> : key}
                   </Button>
                 ))}
               </div>
             ))}
           </div>
 
-          {/* Chú thích ở dưới */}
           <div className="text-center text-sm pb-4 text-neutral-600 dark:text-neutral-400 space-y-2">
             <p className="font-medium">Đoán từ tiếng Việt gồm 7 chữ cái trong 6 lần thử!</p>
             <div className="flex justify-center items-center gap-4 text-xs">
@@ -556,6 +786,24 @@ export default function VietnameseWordle() {
             </div>
           </div>
         </CardContent>
+        <CardFooter className="flex flex-col items-center justify-center pt-3 pb-2 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 dark:text-gray-500 flex items-center gap-2">
+            <a
+              href="https://github.com/minhqnd/wordle-vietnamese"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+            >
+              <Github className="h-4 w-4" />
+            </a>
+            <span>Make with ❤️ by <a
+              href="https://instagram.com/minhqnd"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline transition-colors"
+            >@minhqnd</a>.</span>
+          </p>
+        </CardFooter>
       </Card>
     </div>
   )
